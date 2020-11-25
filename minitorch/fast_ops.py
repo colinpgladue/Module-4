@@ -36,10 +36,38 @@ def tensor_map(fn):
     Returns:
         None : Fills in `out`
     """
-
     def _map(out, out_shape, out_strides, in_storage, in_shape, in_strides):
-        raise NotImplementedError('Need to include this file from past assignment.')
-
+        # Check what we need to do
+        # If shapes are equal we wont need to broadcast
+        shapes_equal = True
+        if len(out_shape) == len(in_shape):
+            for ecount in range(len(out_shape)):
+                if out_shape[ecount] != in_shape[ecount]:
+                    shapes_equal = False
+        else:
+            shapes_equal = False
+        # If strides are equal, we can just map storage to storage
+        strides_equal = True
+        if len(out_strides) == len(in_strides):
+            for ecount in range(len(out_strides)):
+                if out_strides[ecount] != in_strides[ecount]:
+                    strides_equal = False
+        else:
+            strides_equal = False
+        for i in prange(len(out)):
+            if shapes_equal and strides_equal:  # We don't need indexing or broadcasting
+                out[i] = fn(in_storage[i])
+            else:
+                out_index = np.zeros(MAX_DIMS, np.int32)
+                in_index = np.zeros(MAX_DIMS, np.int32)
+                count(i, out_shape, out_index)
+                if not shapes_equal:  # Yes we do need to broadcast
+                    broadcast_index(out_index, out_shape, in_shape, in_index)
+                else:  # Just use indexing
+                    count(i, in_shape, in_index)
+                o = index_to_position(out_index, out_strides)
+                j = index_to_position(in_index, in_strides)
+                out[o] = fn(in_storage[j])
     return njit(parallel=True)(_map)
 
 
@@ -107,8 +135,41 @@ def tensor_zip(fn):
         b_shape,
         b_strides,
     ):
-        raise NotImplementedError('Need to include this file from past assignment.')
-
+        # Check what we need to do
+        # If all shapes are equal, we will need no broadcasting
+        shapes_equal = True
+        if len(out_shape) == len(a_shape) and len(out_shape) == len(b_shape):
+            for ecount in range(len(out_shape)):
+                if out_shape[ecount] != a_shape[ecount] or out_shape[ecount] != b_shape[ecount]:
+                    shapes_equal = False
+        else:
+            shapes_equal = False
+        # If all strides are equal, we can just zip directly from the storage
+        strides_equal = True
+        if len(out_strides) == len(a_strides) and len(out_strides) == len(b_strides):
+            for ecount in range(len(out_strides)):
+                if out_strides[ecount] != a_strides[ecount] or out_strides[ecount] != b_strides[ecount]:
+                    strides_equal = False
+        else:
+            strides_equal = False
+        for i in prange(len(out)):
+            if shapes_equal and strides_equal:
+                out[i] = fn(a_storage[i], b_storage[i])
+            else:
+                out_index = np.zeros(MAX_DIMS, np.int32)
+                a_index = np.zeros(MAX_DIMS, np.int32)
+                b_index = np.zeros(MAX_DIMS, np.int32)
+                count(i, out_shape, out_index)
+                o = index_to_position(out_index, out_strides)
+                if not shapes_equal:  # Yes we do need to broadcast:
+                    broadcast_index(out_index, out_shape, a_shape, a_index)
+                    broadcast_index(out_index, out_shape, b_shape, b_index)
+                else:  # We just need indexing
+                    count(i, a_shape, a_index)
+                    count(i, b_shape, b_index)
+                j = index_to_position(a_index, a_strides)
+                k = index_to_position(b_index, b_strides)
+                out[o] = fn(a_storage[j], b_storage[k])
     return njit(parallel=True)(_zip)
 
 
@@ -168,8 +229,22 @@ def tensor_reduce(fn):
         reduce_shape,
         reduce_size,
     ):
-        raise NotImplementedError('Need to include this file from past assignment.')
-
+        for i in prange(len(out)):
+            if len(out) != 1:  # Normal reduce
+                out_index = np.zeros(MAX_DIMS, np.int32)
+                a_index = np.zeros(MAX_DIMS, np.int32)
+                count(i, out_shape, out_index)
+                o = index_to_position(out_index, out_strides)
+                for s in range(reduce_size):
+                    count(s, reduce_shape, a_index)
+                    for ii in range(len(reduce_shape)):
+                        if reduce_shape[ii] != 1:
+                            out_index[ii] = a_index[ii]
+                    j = index_to_position(out_index, a_strides)
+                    out[o] = fn(out[o], a_storage[j])
+            else:  # Full reduce!
+                for s in range(reduce_size):
+                    out[i] = fn(out[i], a_storage[s])
     return njit(parallel=True)(_reduce)
 
 
@@ -263,8 +338,30 @@ def tensor_matrix_multiply(
     Returns:
         None : Fills in `out`
     """
-
-    raise NotImplementedError('Need to include this file from past assignment.')
+    out_dims = len(out_shape)
+    a_dims = len(a_shape)
+    b_dims = len(b_shape)
+    for out_pos in prange(len(out)):
+        out_idx = np.zeros(MAX_DIMS, np.int32)
+        count(out_pos, out_shape, out_idx)
+        a_broad_idx = np.zeros(MAX_DIMS, np.int32)
+        broadcast_index(out_idx, out_shape[:-2], a_shape[:-2], a_broad_idx)
+        b_broad_idx = np.zeros(MAX_DIMS, np.int32)
+        broadcast_index(out_idx, out_shape[:-2], b_shape[:-2], b_broad_idx)
+        out_store = 0
+        a_broad_idx[a_dims - 2] = out_idx[out_dims - 2]
+        b_broad_idx[b_dims - 1] = out_idx[out_dims - 1]
+        # Inner loop below, for inner index j in [J]
+        a_broad_idx[a_dims - 1] = 0
+        inner_a = index_to_position(a_broad_idx, a_strides)
+        b_broad_idx[b_dims - 2] = 0
+        inner_b = index_to_position(b_broad_idx, b_strides)
+        for j in range(a_shape[-1]):
+            if j > 0:
+                inner_a += a_strides[a_dims - 1]
+                inner_b += b_strides[b_dims - 2]
+            out_store += a_storage[inner_a] * b_storage[inner_b]
+        out[out_pos] = out_store
 
 
 def matrix_multiply(a, b):
