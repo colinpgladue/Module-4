@@ -23,8 +23,10 @@ def index_to_position(index, strides):
     Returns:
         int : position in storage
     """
-
-    raise NotImplementedError('Need to include this file from past assignment.')
+    position = 0
+    for idx, strd in zip(index, strides):
+        position += idx * strd
+    return position
 
 
 def count(position, shape, out_index):
@@ -43,7 +45,12 @@ def count(position, shape, out_index):
       None : Fills in `out_index`.
 
     """
-    raise NotImplementedError('Need to include this file from past assignment.')
+    # Get Strides
+    cur_pos = position + 0
+    for i in range(len(shape) - 1, -1, -1):
+        sh = shape[i]
+        out_index[i] = int(cur_pos % sh)
+        cur_pos = cur_pos // sh
 
 
 def broadcast_index(big_index, big_shape, shape, out_index):
@@ -63,7 +70,12 @@ def broadcast_index(big_index, big_shape, shape, out_index):
     Returns:
         None : Fills in `out_index`.
     """
-    raise NotImplementedError('Need to include this file from past assignment.')
+    for i, s in enumerate(shape):
+        if s > 1:
+            out_index[i] = big_index[i + (len(big_shape) - len(shape))]
+        else:
+            out_index[i] = 0
+    return None
 
 
 def shape_broadcast(shape1, shape2):
@@ -80,7 +92,23 @@ def shape_broadcast(shape1, shape2):
     Raises:
         IndexingError : if cannot broadcast
     """
-    raise NotImplementedError('Need to include this file from past assignment.')
+    # Find which shape has less dims, if any
+    if len(shape1) <= len(shape2):
+        small_shape = shape1
+        big_shape = shape2
+    else:
+        small_shape = shape2
+        big_shape = shape1
+    # extend small shape with 1s added to the left
+    while len(small_shape) < len(big_shape):
+        small_shape = tuple([1] + list(small_shape))
+    out = []
+    for a, b in zip(small_shape, big_shape):
+        if a == b or 1 in [a, b]:
+            out.append(max(a, b))
+        else:
+            raise IndexingError("Not broadcastable!")
+    return tuple(out)
 
 
 def strides_from_shape(shape):
@@ -187,7 +215,14 @@ class TensorData:
             range(len(self.shape))
         ), f"Must give a position to each dimension. Shape: {self.shape} Order: {order}"
 
-        raise NotImplementedError('Need to include this file from past assignment.')
+        new_shape = array(self.shape[:])
+        new_strides = array(self.strides[:])
+
+        for idx, p in enumerate(order):
+            new_shape[idx] = self.shape[p]
+            new_strides[idx] = self.strides[p]
+
+        return TensorData(self._storage[:], tuple(new_shape[:]), strides=tuple(new_strides[:]))
 
     def to_string(self):
         s = ""
