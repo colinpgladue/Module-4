@@ -1,11 +1,13 @@
-import numpy as np
+from . import operators
 from .tensor_data import (
     count,
     index_to_position,
     broadcast_index,
     shape_broadcast,
-    MAX_DIMS,
 )
+
+# I would like to preserve the python built in zip function for use below
+native_zip = zip
 
 
 def tensor_map(fn):
@@ -29,8 +31,20 @@ def tensor_map(fn):
     """
 
     def _map(out, out_shape, out_strides, in_storage, in_shape, in_strides):
-        raise NotImplementedError('Need to include this file from past assignment.')
-
+        for pos in range(len(out)):  # was in_storage, now out# Use count? and then undo count for index in out. # Use strides from in to use index to position
+            count_store_in = [0 for ele in in_shape]
+            count_store_out = [0 for ele in in_shape]
+            # broad_shape = shape_broadcast(in_shape, out_shape) # Are we sure we don't need this?
+            count(pos, out_shape, count_store_out)  # makes an index
+            broadcast_index(count_store_out, out_shape, in_shape, count_store_in)
+            # Let's convert those indexes to a broadcasted one
+            # count_store_in2 = count_store_in[:]
+            # count_store_out2 = count_store_out[:]
+            # broadcast_index(count_store_in, in_shape, broad_shape, count_store_in2)
+            # broadcast_index(count_store_out, out_shape, broad_shape, count_store_out2)
+            position_in = index_to_position(count_store_in, in_strides)
+            position_out = index_to_position(count_store_out, out_strides)
+            out[position_out] = fn(in_storage[position_in])
     return _map
 
 
@@ -49,7 +63,7 @@ def map(fn):
                should broadcast with `a`
 
     Returns:
-        :class:`Tensor` : new tensor
+        :class:`TensorData` : new tensor data
     """
 
     f = tensor_map(fn)
@@ -98,8 +112,17 @@ def tensor_zip(fn):
         b_shape,
         b_strides,
     ):
-        raise NotImplementedError('Need to include this file from past assignment.')
-
+        for pos in range(len(out)):  # a and b have different shapes and strides...
+            count_store_a = [None for ele in a_shape]
+            count_store_b = [None for ele in b_shape]
+            count_store_out = [None for ele in out_shape]
+            count(pos, out_shape, count_store_out)
+            broadcast_index(count_store_out, out_shape, a_shape, count_store_a)
+            broadcast_index(count_store_out, out_shape, b_shape, count_store_b)
+            position_a = index_to_position(count_store_a, a_strides)
+            position_b = index_to_position(count_store_b, b_strides)
+            position_out = index_to_position(count_store_out, out_strides)
+            out[position_out] = fn(a_storage[position_a], b_storage[position_b])
     return _zip
 
 
@@ -116,7 +139,7 @@ def zip(fn):
         b (:class:`TensorData`): tensor to zip over
 
     Returns:
-        :class:`Tensor` : new tensor
+        :class:`TensorData` : new tensor data
     """
 
     f = tensor_zip(fn)
@@ -165,8 +188,23 @@ def tensor_reduce(fn):
         reduce_shape,
         reduce_size,
     ):
-        raise NotImplementedError('Need to include this file from past assignment.')
-
+        # two fors, nested, out shape + reduce shape = a shape (a shape isnt needed in the code here)
+        # Use out shape and reduce shape to find where in a storage im looking.
+        for index in range(len(out)):
+            for offset in range(reduce_size):
+                # Where am I projecting in the out? know how*
+                # What out position corresponds? same*
+                count_out = [None for ele in out_shape]
+                count(index, out_shape, count_out)
+                position_out = index_to_position(count_out, out_strides)
+                # What 'a' position corresponds? just count(offset, reduce_shape, empty list) and add to out_index to get a_index
+                count_reduce = [None for ele in reduce_shape]
+                count(offset, reduce_shape, count_reduce)
+                # Element wise addition using numpy (assuming this is legal as it is imported at the top, but I could use some sort of zipping
+                count_a = operators.addLists(count_out, count_reduce)
+                a_position = index_to_position(count_a, a_strides)
+                # Ok now reduce to the out.
+                out[position_out] = fn(out[position_out], a_storage[a_position])
     return _reduce
 
 
@@ -184,9 +222,8 @@ def reduce(fn, start=0.0):
         dims (list, optional): list of dims to reduce
         out (:class:`TensorData`, optional): tensor to reduce into
 
-
     Returns:
-        :class:`Tensor` : new tensor
+        :class:`TensorData` : new tensor data
     """
 
     f = tensor_reduce(fn)
