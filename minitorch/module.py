@@ -22,11 +22,17 @@ class Module:
 
     def train(self):
         "Set the mode of this module and all descendent modules to `train`."
-        raise NotImplementedError('Need to include this file from past assignment.')
+        self.mode = "train"
+        # To interact with all descendents, we need to be recursive
+        for module in self.modules():
+            module.train()
 
     def eval(self):
         "Set the mode of this module and all descendent modules to `eval`."
-        raise NotImplementedError('Need to include this file from past assignment.')
+        self.mode = "eval"
+        # To interact with all descendents, we need to be recursive
+        for module in self.modules():
+            module.eval()
 
     def named_parameters(self):
         """
@@ -36,7 +42,19 @@ class Module:
         Returns:
             dict: Each name (key) and :class:`Parameter` (value) under this module.
         """
-        raise NotImplementedError('Need to include this file from past assignment.')
+        output = self._parameters
+        nest_output = {}
+        for key in self._modules:
+            new_nest_output = self._modules[key].named_parameters()
+            # Prepend module names
+            prepended_new_nest_output = {}
+            for incomplete_key in new_nest_output:
+                prepended_new_nest_output[key + "." + incomplete_key] = new_nest_output[
+                    incomplete_key
+                ]
+            nest_output = {**nest_output, **prepended_new_nest_output}
+        # Return
+        return {**output, **nest_output}
 
     def parameters(self):
         return self.named_parameters().values()
