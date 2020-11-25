@@ -5,6 +5,7 @@ Implementation of the core Tensor object for autodifferentiation.
 from .autodiff import Variable
 from .tensor_data import TensorData
 from . import operators
+import numpy
 
 
 class Tensor(Variable):
@@ -59,7 +60,7 @@ class Tensor(Variable):
 
     def _ensure_tensor(self, b):
         "Turns a python number into a tensor with the same backend."
-        if isinstance(b, (int, float)):
+        if isinstance(b, (int, float, numpy.int64)):
             b = Tensor.make([b], (1,), backend=self.backend)
         else:
             b._type_(self.backend)
